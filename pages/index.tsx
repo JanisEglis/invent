@@ -1,8 +1,41 @@
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+type Item   = { id:string; nosaukums:string; skaits:number; vieniba:string; vieta:string };
+type Person = { id:string; vards:string;   uzvards:string;   tips:string };
+type Issue  = { id:string; personId:string; itemId:string; qty:number; ts:number };
 
 export default function Dashboard(){
+  // ─── Ielādējam demo datus no localStorage (te darbojas ar tavām /inventars, /personas, /izsniegumi lapām) ───
+  const [inv, setInv]   = useState<Item[]>([]);
+  const [per, setPer]   = useState<Person[]>([]);
+  const [log, setLog]   = useState<Issue[]>([]);
   const [period, setPeriod] = useState<'daily'|'weekly'>('daily');
+  const LOW = 3; // zema atlikuma robeža
+
+  useEffect(()=>{
+    if (typeof window === 'undefined') return;
+    const i = localStorage.getItem('inventars');   if(i) setInv(JSON.parse(i));
+    const p = localStorage.getItem('personas');    if(p) setPer(JSON.parse(p));
+    const l = localStorage.getItem('izsniegumi');  if(l) setLog(JSON.parse(l));
+  },[]);
+
+  // ─── KPI aprēķini ───
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const last7 = now.getTime() - 7*24*60*60*1000;
+
+  const totalSKU  = inv.length;
+  const totalQty  = inv.reduce((a,b)=>a+(Number(b.skaits)||0),0);
+  const lowStock  = inv.filter(x => (Number(x.skaits)||0) <= LOW).length;
+  const issuedTodayQty = log.filter(e=>e.ts>=startOfToday).reduce((a,b)=>a+b.qty,0);
+  const issued7dQty    = log.filter(e=>e.ts>=last7).reduce((a,b)=>a+b.qty,0);
+
+  const recent = useMemo(()=>log.slice().sort((a,b)=>b.ts-a.ts).slice(0,10),[log]);
+  const pName  = (id:string)=>{ const p = per.find(x=>x.id===id); return p ? `${p.vards} ${p.uzvards}` : '—'; };
+  const iName  = (id:string)=>{ const i = inv.find(x=>x.id===id); return i ? i.nosaukums : '—'; };
+
+  const fmtDate = (ts:number) => new Date(ts).toLocaleString('lv-LV');
 
   return (
     <div className="layout">
@@ -17,12 +50,12 @@ export default function Dashboard(){
         </div>
 
         <nav className="nav">
-          <Link href="/" className="active"><span className="icon dots" /> Insights</Link>
-          <Link href="/inventars">Inventory</Link>
-          <Link href="/personas">People</Link>
-          <Link href="/izsniegumi">Issues</Link>
-          <a href="#" onClick={e=>e.preventDefault()}>Reports</a>
-          <a href="#" onClick={e=>e.preventDefault()}>Settings</a>
+          <Link href="/" className="active"><span className="icon dots" /> Pārskats</Link>
+          <Link href="/inventars">Inventārs</Link>
+          <Link href="/personas">Personas</Link>
+          <Link href="/izsniegumi">Izsniegumi</Link>
+          <a href="#" onClick={e=>e.preventDefault()}>Atskaites</a>
+          <a href="#" onClick={e=>e.preventDefault()}>Iestatījumi</a>
           <a href="/api/logout" style={{marginTop:6,opacity:.85}}>↩ Izrakstīties</a>
         </nav>
       </aside>
@@ -33,84 +66,94 @@ export default function Dashboard(){
         <div className="topbar">
           <div className="search">
             <span>🔎</span>
-            <input placeholder="Search anything…" />
+            <input placeholder="Meklēt noliktavā…" />
           </div>
-          <button className="btn">⚙️</button>
-          <button className="btn">🔔</button>
+          <button className="btn" title="Iestatījumi">⚙️</button>
+          <button className="btn" title="Paziņojumi">🔔</button>
           <div className="avatar">JE</div>
         </div>
 
         {/* Content */}
         <div className="container">
-          {/* KPI cards */}
           <div className="cards">
+            {/* Kopējais atlikums (gab.) */}
             <div className="card cols-4">
-              <div className="label">Items in stock</div>
+              <div className="label">Kopējais atlikums (gab.)</div>
               <div className="kpi">
-                <div className="value">1 036</div>
-                <span className="pill up">+2.1%</span>
+                <div className="value">{totalQty.toLocaleString('lv-LV')}</div>
+                <span className="pill up">+ pēd. 7d {issued7dQty.toLocaleString('lv-LV')}</span>
               </div>
               <div className="hr" />
               <div className="actions">
-                <div className="segment" role="tablist" aria-label="forecast">
-                  <button className="active" onClick={()=>{}}>7d</button>
-                  <button onClick={()=>{}}>30d</button>
-                  <button onClick={()=>{}}>90d</button>
+                <div className="segment" role="tablist" aria-label="prognoze">
+                  <button className="active">7d</button>
+                  <button>30d</button>
+                  <button>90d</button>
                 </div>
-                <a className="btn" href="#" onClick={e=>e.preventDefault()}>View details</a>
+                <Link className="btn" href="/inventars">Skatīt detalizēti</Link>
               </div>
             </div>
 
+            {/* SKU skaits un zemais atlikums */}
             <div className="card cols-4">
-              <div className="label">Average issue per person</div>
+              <div className="label">Preču pozīcijas (SKU)</div>
               <div className="kpi">
-                <div className="value">2.4</div>
-                <span className="pill down">−0.7%</span>
+                <div className="value">{totalSKU}</div>
+                <span className="pill down">zems atlikums: {lowStock}</span>
               </div>
               <div className="hr" />
               <div className="actions">
-                <Link href="/izsniegumi" className="btn">Open issues</Link>
+                <Link href="/inventars" className="btn">Atvērt inventāru</Link>
               </div>
             </div>
 
+            {/* Izsniegts šodien */}
             <div className="card cols-4">
-              <div className="label">Potential savings</div>
+              <div className="label">Izsniegts šodien</div>
               <div className="kpi">
-                <div className="value">$1 870</div>
-                <span className="pill up">+5.9%</span>
+                <div className="value">{issuedTodayQty}</div>
+                <span className="pill up">pēd. 7d: {issued7dQty}</span>
               </div>
               <div className="hr" />
               <div className="actions">
-                <Link href="/inventars" className="btn">Optimize stock</Link>
+                <Link href="/izsniegumi" className="btn">Reģistrēt izsniegumu</Link>
               </div>
             </div>
 
-            {/* Filters row */}
+            {/* Filtri */}
             <div className="card cols-12" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div className="actions" style={{gap:12}}>
-                <div className="segment" role="tablist" aria-label="timeframe">
-                  <button className={period==='daily'?'active':''} onClick={()=>setPeriod('daily')}>Daily</button>
-                  <button className={period==='weekly'?'active':''} onClick={()=>setPeriod('weekly')}>Weekly</button>
+                <div className="segment" role="tablist" aria-label="periods">
+                  <button className={period==='daily'?'active':''}  onClick={()=>setPeriod('daily')}>Diena</button>
+                  <button className={period==='weekly'?'active':''} onClick={()=>setPeriod('weekly')}>Nedēļa</button>
                 </div>
                 <div className="segment" role="tablist" aria-label="range">
-                  <button className="active">Last 4 weeks</button>
-                  <button>Last 3 months</button>
+                  <button className="active">Pēdējās 4 nedēļas</button>
+                  <button>Pēdējie 3 mēneši</button>
                 </div>
               </div>
-              <button className="btn primary">Filter</button>
+              <button className="btn primary">Filtrs</button>
             </div>
 
-            {/* Recent activity table (no chart) */}
+            {/* Pēdējās darbības */}
             <div className="card cols-12">
-              <div className="label">Recent activity</div>
+              <div className="label">Pēdējās darbības</div>
               <table className="table">
                 <thead>
-                  <tr><th>Date</th><th>Type</th><th>Person</th><th>Item</th><th>Qty</th></tr>
+                  <tr><th>Datums</th><th>Tips</th><th>Persona</th><th>Vienums</th><th>Daudzums</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td>2025-07-01</td><td>Issue</td><td>Anna B.</td><td>Kompass M52</td><td>1</td></tr>
-                  <tr><td>2025-07-01</td><td>Return</td><td>Jānis E.</td><td>Radio stacija</td><td>1</td></tr>
-                  <tr><td>2025-06-30</td><td>Stock in</td><td>—</td><td>Pirmās palīdzības soma</td><td>5</td></tr>
+                  {recent.length ? recent.map(e=>(
+                    <tr key={e.id}>
+                      <td>{fmtDate(e.ts)}</td>
+                      <td>Izsniegts</td>
+                      <td>{pName(e.personId)}</td>
+                      <td>{iName(e.itemId)}</td>
+                      <td>{e.qty}</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={5} style={{opacity:.7}}>Vēl nav ierakstu. Pievieno <Link href="/inventars">vienumus</Link> un reģistrē <Link href="/personas">personas</Link>, pēc tam veic <Link href="/izsniegumi">izsniegumu</Link>.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
